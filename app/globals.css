@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #fafafa;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --border: #e5e7eb;
+  --muted: #64748b;
+  --brand: #0ea5e9;
+  --brand-hover: #0284c7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f172a;
+    --foreground: #f1f5f9;
+    --card: #1e293b;
+    --border: #334155;
+    --muted: #94a3b8;
+    --brand: #38bdf8;
+    --brand-hover: #7dd3fc;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Notion/Linear style subtle transitions */
+* {
+  @apply transition-colors duration-150;
+}
+
+button:not(:disabled):hover,
+[role="button"]:hover,
+a:hover {
+  @apply transition-opacity duration-150;
+}
