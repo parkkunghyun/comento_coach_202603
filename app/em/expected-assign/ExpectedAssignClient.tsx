@@ -228,7 +228,7 @@ export function ExpectedAssignClient({
       list.push(r);
       map.set(d, list);
     }
-    for (const list of map.values()) {
+    for (const list of Array.from(map.values())) {
       list.sort((a, b) =>
         (a.courseName || "").localeCompare(b.courseName || "", "ko")
       );
