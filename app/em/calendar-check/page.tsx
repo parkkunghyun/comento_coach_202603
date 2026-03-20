@@ -45,7 +45,11 @@ export default async function EMCalendarCheckPage() {
           </div>
           <div className="flex justify-between py-2 border-b border-[var(--border)]">
             <span className="text-[var(--muted)]">제목 필터</span>
-            <span>&quot;{debug.summaryFilter}&quot; 포함</span>
+            <span className="text-right">
+              {debug.summaryFilter === "(전체 표시)"
+                ? "없음 (전체 표시)"
+                : `"${debug.summaryFilter}" 포함`}
+            </span>
           </div>
           <div className="flex justify-between py-2 border-b border-[var(--border)]">
             <span className="text-[var(--muted)]">API 조회 건수</span>
@@ -57,6 +61,20 @@ export default async function EMCalendarCheckPage() {
           </div>
         </dl>
 
+        {debug.totalFromApi > 0 &&
+          debug.afterSummaryFilter === 0 &&
+          debug.summaryFilter !== "(전체 표시)" && (
+            <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+              <p className="font-medium">제목 필터 때문에 일정이 0건입니다.</p>
+              <p className="mt-1 text-xs opacity-90">
+                API는 {debug.totalFromApi}건을 가져왔지만, GOOGLE_CALENDAR_SUMMARY_FILTER는{" "}
+                <strong>이벤트 제목</strong>에만 적용됩니다. 캘린더 이름(기업교육 일정)과는 관계없습니다.
+                .env.local에서 <code className="rounded bg-black/10 px-1">GOOGLE_CALENDAR_SUMMARY_FILTER</code>{" "}
+                줄을 삭제하거나 주석 처리한 뒤 서버를 다시 시작하세요.
+              </p>
+            </div>
+          )}
+
         {debug.sampleSummaries.length > 0 && (
           <div>
             <p className="text-sm font-medium text-[var(--muted)] mb-2">
@@ -67,11 +85,16 @@ export default async function EMCalendarCheckPage() {
                 <li key={i}>{s}</li>
               ))}
             </ul>
-            <p className="text-xs text-[var(--muted)] mt-2">
-              위 제목에 &quot;{debug.summaryFilter}&quot;가 포함되어야 교육 일정에 표시됩니다.
-              공백 유무는 자동으로 무시됩니다. 다른 문구를 쓰려면 .env에
-              GOOGLE_CALENDAR_SUMMARY_FILTER=원하는문구 를 설정하세요.
-            </p>
+            {debug.summaryFilter !== "(전체 표시)" ? (
+              <p className="text-xs text-[var(--muted)] mt-2">
+                필터가 켜져 있으면 위 제목에 &quot;{debug.summaryFilter}&quot;가 포함된 일정만 앱에 표시됩니다.
+                전체를 보려면 필터 env를 비우세요.
+              </p>
+            ) : (
+              <p className="text-xs text-[var(--muted)] mt-2">
+                제목 필터가 없어 위 일정이 모두 교육 일정·예상 배정 등에 반영됩니다.
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -11,7 +11,13 @@ import type {
   Review,
   AutoAssignRule,
   CoachLevelRow,
+  ExpectedDashboardRow,
 } from "@/types";
+import {
+  EXPECTED_DASHBOARD_SHEET,
+  formatKstYmdHm,
+  nextAssignIdForToday,
+} from "./expected-dashboard";
 
 const getSheets = async () => {
   const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL;
@@ -35,13 +41,153 @@ const getSheets = async () => {
   return { sheets, spreadsheetId };
 };
 
+/** A1 표기용 시트명 (이름에 ' 가 있으면 '' 로 이스케이프) */
+function quoteSheetNameForA1(sheetName: string): string {
+  return `'${sheetName.replace(/'/g, "''")}'`;
+}
+
+/** 탭 이름 비교용 (전각/결합문자/공백 차이 흡수) */
+function normalizeSheetTitleKey(s: string): string {
+  return s
+    .normalize("NFKC")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 스프레드시트에 있는 실제 탭 제목 반환 (코드 상수와 다를 수 있음) */
+async function resolveExpectedDashboardSheetTitle(
+  sheets: NonNullable<Awaited<ReturnType<typeof getSheets>>["sheets"]>,
+  spreadsheetId: string
+): Promise<string | null> {
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const want = normalizeSheetTitleKey(EXPECTED_DASHBOARD_SHEET);
+  for (const sh of res.data.sheets ?? []) {
+    const t = sh.properties?.title;
+    if (t && normalizeSheetTitleKey(t) === want) return t;
+  }
+  return null;
+}
+
+/** 탭이 없으면 `EXPECTED_DASHBOARD_SHEET` 이름으로 생성 */
+async function ensureExpectedDashboardSheet(
+  sheets: NonNullable<Awaited<ReturnType<typeof getSheets>>["sheets"]>,
+  spreadsheetId: string
+): Promise<{ ok: true; title: string } | { ok: false; error: string }> {
+  let title = await resolveExpectedDashboardSheetTitle(sheets, spreadsheetId);
+  if (title) return { ok: true, title };
+
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: EXPECTED_DASHBOARD_SHEET,
+                gridProperties: { rowCount: 3000, columnCount: 12 },
+              },
+            },
+          },
+        ],
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    title = await resolveExpectedDashboardSheetTitle(sheets, spreadsheetId);
+    if (title) return { ok: true, title };
+    return { ok: false, error: msg };
+  }
+
+  title = await resolveExpectedDashboardSheetTitle(sheets, spreadsheetId);
+  if (title) return { ok: true, title };
+  return { ok: true, title: EXPECTED_DASHBOARD_SHEET };
+}
+
+async function expectedDashboardValuesGet(
+  sheets: NonNullable<Awaited<ReturnType<typeof getSheets>>["sheets"]>,
+  spreadsheetId: string,
+  sheetTitle: string,
+  a1Suffix: string
+): Promise<unknown[][] | null> {
+  const quoted = `${quoteSheetNameForA1(sheetTitle)}!${a1Suffix}`;
+  const unquoted = `${sheetTitle}!${a1Suffix}`;
+  for (const range of [quoted, unquoted]) {
+    try {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+      return res.data.values ?? null;
+    } catch {
+      /* try next notation */
+    }
+  }
+  return null;
+}
+
+async function expectedDashboardValuesAppendRow(
+  sheets: NonNullable<Awaited<ReturnType<typeof getSheets>>["sheets"]>,
+  spreadsheetId: string,
+  sheetTitle: string,
+  row: unknown[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 범위가 넓을수록 일부 환경에서 parse error → 시작 셀만 지정 + INSERT_ROWS
+  const attempts = [
+    `${quoteSheetNameForA1(sheetTitle)}!A1`,
+    `${sheetTitle}!A1`,
+    quoteSheetNameForA1(sheetTitle),
+  ];
+  let last = "append 실패";
+  for (const range of attempts) {
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [row] },
+      });
+      return { ok: true };
+    } catch (err) {
+      last = err instanceof Error ? err.message : String(err);
+    }
+  }
+  return { ok: false, error: last };
+}
+
+async function expectedDashboardValuesUpdateRow(
+  sheets: NonNullable<Awaited<ReturnType<typeof getSheets>>["sheets"]>,
+  spreadsheetId: string,
+  sheetTitle: string,
+  rowNum: number,
+  row: unknown[]
+): Promise<boolean> {
+  const cell = `A${rowNum}:I${rowNum}`;
+  for (const range of [`${quoteSheetNameForA1(sheetTitle)}!${cell}`, `${sheetTitle}!${cell}`]) {
+    try {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [row] },
+      });
+      return true;
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}
+
 async function getValues(sheetName: string, range: string) {
   try {
     const { sheets, spreadsheetId } = await getSheets();
     if (!sheets || !spreadsheetId) return null;
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${sheetName}'!${range}`,
+      range: `${quoteSheetNameForA1(sheetName)}!${range}`,
     });
     return res.data.values ?? null;
   } catch {
@@ -52,13 +198,21 @@ async function getValues(sheetName: string, range: string) {
 async function appendValues(sheetName: string, values: unknown[][]) {
   const { sheets, spreadsheetId } = await getSheets();
   if (!sheets || !spreadsheetId) return false;
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `'${sheetName}'!A:Z`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values },
-  });
-  return true;
+  try {
+    // append API는 '시트'!A:Z 처럼 "열 전체"만 있는 범위를 파싱 못 하는 경우가 많음 → 행 번호 포함
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${quoteSheetNameForA1(sheetName)}!A1:Z10000`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values },
+    });
+    return true;
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[sheets] appendValues:", err);
+    }
+    return false;
+  }
 }
 
 async function updateValues(sheetName: string, range: string, values: unknown[][]) {
@@ -66,7 +220,7 @@ async function updateValues(sheetName: string, range: string, values: unknown[][
   if (!sheets || !spreadsheetId) return false;
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `'${sheetName}'!${range}`,
+    range: `${quoteSheetNameForA1(sheetName)}!${range}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values },
   });
@@ -128,6 +282,36 @@ export async function getCoachLoginProfiles(): Promise<CoachLoginProfile[]> {
     birthDate: String(r[6] ?? ""),
     address: String(r[7] ?? ""),
   }));
+}
+
+// --- 실습코치정보 (외부/내부 분류용)
+// 요청사항 기준 컬럼 예시: No.(A), 상태(B), 이름(C), 소속(D=내부/외부), 월평균 출강수(E), 이메일(F)
+export async function getCoachInfoProfiles(): Promise<CoachLoginProfile[]> {
+  const rows = await getValues("실습코치정보", "A2:F500");
+  if (!rows?.length) return [];
+
+  return rows.map((r, i) => {
+    const emailFromF = String(r[5] ?? "").trim();
+    const emailFromE = String(r[4] ?? "").trim();
+    const email =
+      emailFromF.includes("@")
+        ? emailFromF
+        : emailFromE.includes("@")
+          ? emailFromE
+          : emailFromF || emailFromE;
+
+    return {
+      rowIndex: i + 2,
+      no: String(r[0] ?? ""),
+      status: String(r[1] ?? "").trim(),
+      name: String(r[2] ?? ""),
+      affiliation: String(r[3] ?? "").trim(),
+      email,
+      contact: "",
+      birthDate: "",
+      address: "",
+    };
+  });
 }
 
 /** 실습코치 로그인 시트 지정 행 수정 (B~H열) */
@@ -463,4 +647,113 @@ export async function updateCoachLevelAvailability(
 function toBool(val: string): boolean {
   const v = String(val).toUpperCase();
   return v === "TRUE" || v === "1";
+}
+
+// --- 실습코치_예상대시보드 (A~I)
+// 배정ID, 일정ID, 교육일자, 기업명, 과정명, 실습코치명, 배정상태, 비고, 최종수정일시
+export async function getExpectedDashboardRows(): Promise<ExpectedDashboardRow[]> {
+  const { sheets, spreadsheetId } = await getSheets();
+  if (!sheets || !spreadsheetId) return [];
+  const ensured = await ensureExpectedDashboardSheet(sheets, spreadsheetId);
+  if (!ensured.ok) return [];
+  const rows = await expectedDashboardValuesGet(
+    sheets,
+    spreadsheetId,
+    ensured.title,
+    "A2:I2000"
+  );
+  if (!rows?.length) return [];
+  return rows
+    .filter((r) => String(r[0] ?? "").trim() !== "")
+    .map((r) => ({
+      assignId: String(r[0] ?? ""),
+      scheduleSheetId: String(r[1] ?? ""),
+      educationDate: String(r[2] ?? ""),
+      companyName: String(r[3] ?? ""),
+      courseName: String(r[4] ?? ""),
+      coachName: String(r[5] ?? ""),
+      assignmentStatus: String(r[6] ?? ""),
+      notes: String(r[7] ?? ""),
+      updatedAt: String(r[8] ?? ""),
+    }));
+}
+
+export async function upsertExpectedDashboardRow(data: {
+  scheduleSheetId: string;
+  educationDate: string;
+  companyName: string;
+  courseName: string;
+  coachName: string;
+  assignmentStatus: string;
+  notes: string;
+}): Promise<{ ok: boolean; error?: string; assignId?: string }> {
+  try {
+    const { sheets, spreadsheetId } = await getSheets();
+    if (!sheets || !spreadsheetId) {
+      return { ok: false, error: "스프레드시트 연동이 설정되지 않았습니다." };
+    }
+
+    const ensured = await ensureExpectedDashboardSheet(sheets, spreadsheetId);
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        error: `예상대시보드 시트를 찾거나 만들 수 없습니다: ${ensured.error}`,
+      };
+    }
+    const sheetTitle = ensured.title;
+
+    const now = formatKstYmdHm();
+    const status =
+      String(data.assignmentStatus).trim() === "확정배정" ? "확정배정" : "예상배정";
+    const rows = await expectedDashboardValuesGet(
+      sheets,
+      spreadsheetId,
+      sheetTitle,
+      "A2:I2000"
+    );
+    const dataRows = rows?.filter((r) => String(r[0] ?? "").trim() !== "") ?? [];
+    const target = data.scheduleSheetId.trim();
+    const idx = dataRows.findIndex((r) => String(r[1] ?? "").trim() === target);
+
+    const buildRow = (assignId: string) => [
+      assignId,
+      data.scheduleSheetId,
+      data.educationDate,
+      data.companyName,
+      data.courseName,
+      data.coachName,
+      status,
+      data.notes,
+      now,
+    ];
+
+    if (idx >= 0) {
+      const assignId = String(dataRows[idx][0] ?? "");
+      const rowNum = idx + 2;
+      const ok = await expectedDashboardValuesUpdateRow(
+        sheets,
+        spreadsheetId,
+        sheetTitle,
+        rowNum,
+        buildRow(assignId)
+      );
+      return ok ? { ok: true, assignId } : { ok: false, error: "시트 업데이트에 실패했습니다." };
+    }
+
+    const colA = dataRows.map((r) => String(r[0] ?? ""));
+    const newId = nextAssignIdForToday(colA);
+    const appended = await expectedDashboardValuesAppendRow(
+      sheets,
+      spreadsheetId,
+      sheetTitle,
+      buildRow(newId)
+    );
+    if (!appended.ok) {
+      return { ok: false, error: appended.error };
+    }
+    return { ok: true, assignId: newId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
 }

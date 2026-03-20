@@ -9,22 +9,30 @@ import {
   mockAssignments,
   mockReviews,
   mockAutoAssignRules,
+  mockExpectedDashboardRows,
 } from "./mock-data";
+import { formatKstYmdHm, nextAssignIdForToday } from "./expected-dashboard";
+import { isSheetsEnvConfigured } from "./sheets-env";
+import type { ExpectedDashboardRow } from "@/types";
 
 export type { CalendarSchedule } from "./calendar";
 
-const useSheets =
-  !!process.env.GOOGLE_SHEETS_CLIENT_EMAIL &&
-  !!process.env.GOOGLE_SHEETS_PRIVATE_KEY &&
-  !!process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+/**
+ * 스프레드시트 사용 여부는 **호출 시마다** env를 읽습니다.
+ * 모듈 최상단에서 한 번만 읽으면, dev 서버 기동 후 .env를 채워도
+ * 영원히 mock 경로만 타는 버그가 납니다.
+ */
+function isSheetsEnabled(): boolean {
+  return isSheetsEnvConfigured();
+}
 
 export async function getUsers() {
-  if (useSheets) return sheets.getUsers();
+  if (isSheetsEnabled()) return sheets.getUsers();
   return mockUsers;
 }
 
 export async function findUserByEmail(email: string) {
-  if (useSheets) return sheets.findUserByEmail(email);
+  if (isSheetsEnabled()) return sheets.findUserByEmail(email);
   return mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
 }
 
@@ -32,7 +40,7 @@ export async function validateEmLogin(
   id: string,
   password: string
 ): Promise<{ id: string; name: string } | null> {
-  if (useSheets) return sheets.validateEmLogin(id, password);
+  if (isSheetsEnabled()) return sheets.validateEmLogin(id, password);
   if (id.trim() === "em" && password === "em") return { id: "em", name: "교육운영 매니저" };
   return null;
 }
@@ -41,7 +49,7 @@ export async function validateCoachLogin(
   id: string,
   password: string
 ): Promise<{ id: string; name: string; email: string } | null> {
-  if (useSheets) return sheets.validateCoachLogin(id, password);
+  if (isSheetsEnabled()) return sheets.validateCoachLogin(id, password);
   if (id.trim() === "coach1" && password === "coach1")
     return { id: "c1", name: "김실습", email: "coach1@example.com" };
   if (id.trim() === "coach2" && password === "coach2")
@@ -50,12 +58,12 @@ export async function validateCoachLogin(
 }
 
 export async function getSchedules() {
-  if (useSheets) return sheets.getSchedules();
+  if (isSheetsEnabled()) return sheets.getSchedules();
   return mockSchedules;
 }
 
 export async function getScheduleById(id: string) {
-  if (useSheets) return sheets.getScheduleById(id);
+  if (isSheetsEnabled()) return sheets.getScheduleById(id);
   return mockSchedules.find((s) => s.id === id) ?? null;
 }
 
@@ -78,18 +86,23 @@ export async function updateCalendarEvent(
 }
 
 export async function getCoachProfiles() {
-  if (useSheets) return sheets.getCoachProfiles();
+  if (isSheetsEnabled()) return sheets.getCoachProfiles();
   return mockCoachProfiles;
 }
 
 export async function getCoachProfileByUserId(userId: string) {
-  if (useSheets) return sheets.getCoachProfileByUserId(userId);
+  if (isSheetsEnabled()) return sheets.getCoachProfileByUserId(userId);
   return mockCoachProfiles.find((p) => p.userId === userId) ?? null;
 }
 
 /** 실습코치 로그인 시트에서 프로필 목록 (No., 상태, 이름, 소속, 이메일 등) */
 export async function getCoachLoginProfiles() {
-  if (useSheets) return sheets.getCoachLoginProfiles();
+  if (isSheetsEnabled()) return sheets.getCoachLoginProfiles();
+  return [];
+}
+
+export async function getCoachInfoProfiles() {
+  if (isSheetsEnabled()) return sheets.getCoachInfoProfiles();
   return [];
 }
 
@@ -106,22 +119,22 @@ export async function updateCoachLoginProfile(
     address?: string;
   }
 ) {
-  if (useSheets) return sheets.updateCoachLoginProfile(rowIndex, updates);
+  if (isSheetsEnabled()) return sheets.updateCoachLoginProfile(rowIndex, updates);
   return false;
 }
 
 export async function getAssignments() {
-  if (useSheets) return sheets.getAssignments();
+  if (isSheetsEnabled()) return sheets.getAssignments();
   return mockAssignments;
 }
 
 export async function getAssignmentsByCoachId(coachId: string) {
-  if (useSheets) return sheets.getAssignmentsByCoachId(coachId);
+  if (isSheetsEnabled()) return sheets.getAssignmentsByCoachId(coachId);
   return mockAssignments.filter((a) => a.coachId === coachId);
 }
 
 export async function getAssignmentsByScheduleId(scheduleId: string) {
-  if (useSheets) return sheets.getAssignmentsByScheduleId(scheduleId);
+  if (isSheetsEnabled()) return sheets.getAssignmentsByScheduleId(scheduleId);
   return mockAssignments.filter((a) => a.scheduleId === scheduleId);
 }
 
@@ -129,7 +142,7 @@ export async function updateAssignmentStatus(
   assignmentId: string,
   status: "pending" | "accepted" | "rejected" | "confirmed"
 ) {
-  if (useSheets) return sheets.updateAssignmentStatus(assignmentId, status);
+  if (isSheetsEnabled()) return sheets.updateAssignmentStatus(assignmentId, status);
   const a = mockAssignments.find((x) => x.id === assignmentId);
   if (a) {
     a.status = status;
@@ -140,7 +153,7 @@ export async function updateAssignmentStatus(
 }
 
 export async function confirmAssignment(assignmentId: string) {
-  if (useSheets) return sheets.confirmAssignment(assignmentId);
+  if (isSheetsEnabled()) return sheets.confirmAssignment(assignmentId);
   return updateAssignmentStatus(assignmentId, "confirmed");
 }
 
@@ -151,7 +164,7 @@ export async function createAssignment(data: {
   coachName: string;
   status?: "pending" | "accepted" | "rejected" | "confirmed";
 }): Promise<string | null> {
-  if (useSheets) return sheets.createAssignment(data);
+  if (isSheetsEnabled()) return sheets.createAssignment(data);
   return null;
 }
 
@@ -161,12 +174,12 @@ export async function updateAssignmentCoach(
   coachId: string,
   coachName: string
 ): Promise<boolean> {
-  if (useSheets) return sheets.updateAssignmentCoach(assignmentId, coachId, coachName);
+  if (isSheetsEnabled()) return sheets.updateAssignmentCoach(assignmentId, coachId, coachName);
   return false;
 }
 
 export async function getReviews() {
-  if (useSheets) return sheets.getReviews();
+  if (isSheetsEnabled()) return sheets.getReviews();
   return mockReviews;
 }
 
@@ -178,7 +191,7 @@ export async function createReview(data: {
   issues: string;
   rating: number;
 }) {
-  if (useSheets) return sheets.createReview(data);
+  if (isSheetsEnabled()) return sheets.createReview(data);
   mockReviews.push({
     id: `rev_${Date.now()}`,
     ...data,
@@ -188,12 +201,12 @@ export async function createReview(data: {
 }
 
 export async function getAutoAssignRules() {
-  if (useSheets) return sheets.getAutoAssignRules();
+  if (isSheetsEnabled()) return sheets.getAutoAssignRules();
   return mockAutoAssignRules;
 }
 
 export async function updateCoachProfileLevel(profileId: string, level: number) {
-  if (useSheets) return sheets.updateCoachProfileLevel(profileId, level);
+  if (isSheetsEnabled()) return sheets.updateCoachProfileLevel(profileId, level);
   const p = mockCoachProfiles.find((x) => x.id === profileId);
   if (p) p.level = level;
   return !!p;
@@ -201,8 +214,58 @@ export async function updateCoachProfileLevel(profileId: string, level: number) 
 
 /** 실습코치 등급 시트 데이터 (인원들 LEVEL 현황) */
 export async function getCoachLevelStatus() {
-  if (useSheets) return sheets.getCoachLevelStatus();
+  if (isSheetsEnabled()) return sheets.getCoachLevelStatus();
   return [];
+}
+
+/** 실습코치_예상대시보드 시트 (가배정/예상배정) */
+export async function getExpectedDashboardRows(): Promise<ExpectedDashboardRow[]> {
+  if (isSheetsEnabled()) return sheets.getExpectedDashboardRows();
+  return mockExpectedDashboardRows.map((r) => ({ ...r }));
+}
+
+export async function upsertExpectedDashboardRow(data: {
+  scheduleSheetId: string;
+  educationDate: string;
+  companyName: string;
+  courseName: string;
+  coachName: string;
+  assignmentStatus: string;
+  notes: string;
+}): Promise<{ ok: boolean; error?: string; assignId?: string }> {
+  if (isSheetsEnabled()) return sheets.upsertExpectedDashboardRow(data);
+  const now = formatKstYmdHm();
+  const status =
+    String(data.assignmentStatus).trim() === "확정배정" ? "확정배정" : "예상배정";
+  const target = data.scheduleSheetId.trim();
+  const idx = mockExpectedDashboardRows.findIndex((r) => r.scheduleSheetId === target);
+  if (idx >= 0) {
+    const prev = mockExpectedDashboardRows[idx]!;
+    mockExpectedDashboardRows[idx] = {
+      ...prev,
+      educationDate: data.educationDate,
+      companyName: data.companyName,
+      courseName: data.courseName,
+      coachName: data.coachName,
+      assignmentStatus: status,
+      notes: data.notes,
+      updatedAt: now,
+    };
+    return { ok: true, assignId: prev.assignId };
+  }
+  const newId = nextAssignIdForToday(mockExpectedDashboardRows.map((r) => r.assignId));
+  mockExpectedDashboardRows.push({
+    assignId: newId,
+    scheduleSheetId: data.scheduleSheetId,
+    educationDate: data.educationDate,
+    companyName: data.companyName,
+    courseName: data.courseName,
+    coachName: data.coachName,
+    assignmentStatus: status,
+    notes: data.notes,
+    updatedAt: now,
+  });
+  return { ok: true, assignId: newId };
 }
 
 /** 실습코치 등급 시트 E,F,G(생성형AI/Python/핸즈온 가능) 수정 */
@@ -210,6 +273,6 @@ export async function updateCoachLevelAvailability(
   email: string,
   updates: { genAiAvailable?: boolean; pythonAvailable?: boolean; handsonAvailable?: boolean }
 ) {
-  if (useSheets) return sheets.updateCoachLevelAvailability(email, updates);
+  if (isSheetsEnabled()) return sheets.updateCoachLevelAvailability(email, updates);
   return false;
 }

@@ -118,3 +118,18 @@ export interface CoachLevelRow {
   birthDate: string; // 생년월일
   level: string; // LEVEL (T열)
 }
+
+/** 실습코치_예상대시보드 시트 한 행 (가배정/예상배정) */
+export interface ExpectedDashboardRow {
+  assignId: string;
+  /** 시트 일정ID (캘린더 이벤트 기준 안정 ID 또는 수기 SCH-MAN-...) */
+  scheduleSheetId: string;
+  educationDate: string; // YYYY-MM-DD
+  companyName: string;
+  courseName: string;
+  coachName: string;
+  /** 예상배정 | 확정배정 */
+  assignmentStatus: string;
+  notes: string;
+  updatedAt: string;
+}

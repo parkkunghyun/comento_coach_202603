@@ -5,7 +5,11 @@ import type {
   Assignment,
   Review,
   AutoAssignRule,
+  ExpectedDashboardRow,
 } from "@/types";
+
+/** 시트 미연동 시 예상대시보드 인메모리 저장 (개발용) */
+export let mockExpectedDashboardRows: ExpectedDashboardRow[] = [];
 
 export const mockUsers: User[] = [
   {

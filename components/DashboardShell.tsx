@@ -13,15 +13,17 @@ import {
   Users,
   Settings,
   LayoutDashboard,
+  Sparkles,
 } from "lucide-react";
 
 const EM_NAV = [
-  { href: "/em", label: "대시보드", icon: LayoutDashboard },
-  { href: "/em/schedules", label: "교육 일정", icon: Calendar },
-  { href: "/em/assignments", label: "배정 관리", icon: UserCheck },
-  { href: "/em/reviews", label: "교육 후기", icon: MessageSquare },
-  { href: "/em/coaches", label: "실습코치 프로필", icon: Users },
-  { href: "/em/auto-assign", label: "자동 배정 로직", icon: Settings },
+  { href: "/em", label: "대시보드", title: "대시보드", icon: LayoutDashboard },
+  { href: "/em/schedules", label: "일정", title: "교육 일정", icon: Calendar },
+  { href: "/em/expected-assign", label: "예상 배정", title: "예상 배정", icon: Sparkles },
+  { href: "/em/assignments", label: "배정", title: "배정 관리", icon: UserCheck },
+  { href: "/em/reviews", label: "후기", title: "교육 후기", icon: MessageSquare },
+  { href: "/em/coaches", label: "코치", title: "실습코치 프로필", icon: Users },
+  { href: "/em/auto-assign", label: "자동배정", title: "자동 배정 로직", icon: Settings },
 ] as const;
 
 export function DashboardShell({
@@ -49,7 +51,7 @@ export function DashboardShell({
         </button>
         <div className="flex items-center gap-2">
           <BookOpen className="h-6 w-6 text-[var(--brand)]" />
-          <span className="font-semibold text-sm">EM 대시보드</span>
+          <span className="font-semibold text-xs">EM</span>
         </div>
         <div className="w-10" />
       </header>
@@ -63,17 +65,17 @@ export function DashboardShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 z-50 h-screen w-64 flex flex-col border-r border-[var(--border)] bg-[var(--card)] transition-transform duration-200 ease-out lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-50 h-screen w-44 flex flex-col border-r border-[var(--border)] bg-[var(--card)] transition-transform duration-200 ease-out lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center justify-between border-b border-[var(--border)] px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand)]/10 text-[var(--brand)]">
-              <BookOpen className="h-4 w-4" />
+        <div className="flex h-12 items-center justify-between border-b border-[var(--border)] px-2.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--brand)]/10 text-[var(--brand)]">
+              <BookOpen className="h-3.5 w-3.5" />
             </div>
-            <span className="font-semibold text-sm text-[var(--foreground)]">
-              EM 대시보드
+            <span className="truncate font-semibold text-xs text-[var(--foreground)]" title="EM 대시보드">
+              EM
             </span>
           </div>
           <button
@@ -86,7 +88,7 @@ export function DashboardShell({
           </button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 p-3 overflow-y-auto">
+        <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto">
           {EM_NAV.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -96,22 +98,23 @@ export function DashboardShell({
               <Link
                 key={item.href}
                 href={item.href}
+                title={item.title}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
                   isActive
                     ? "bg-[var(--brand)]/10 text-[var(--brand)]"
                     : "text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
                 }`}
               >
-                <Icon className="h-4 w-4 shrink-0" />
-                {item.label}
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{item.label}</span>
               </Link>
             );
           })}
         </nav>
       </aside>
 
-      <main className="min-h-screen pt-14 lg:pt-0 lg:pl-64">
+      <main className="min-h-screen pt-14 lg:pt-0 lg:pl-44">
         <div className="p-4 sm:p-6 lg:p-8">{children}</div>
       </main>
     </div>
